@@ -90,22 +90,21 @@ export class ParticleSystem {
     const normalizedEnergy = avgFrequency / 255.0;
     
     // Enhanced energy-based effects
-    const baseRadius = 5 + normalizedEnergy * 3;
-    const vortexStrength = 0.15 * normalizedEnergy;
-    const expansionRate = 0.02 * normalizedEnergy;
+    const baseRadius = 5 + normalizedEnergy * 5; 
+    const vortexStrength = 0.2 * normalizedEnergy; 
+    const expansionRate = 0.03 * normalizedEnergy; 
     
     this.material.uniforms.time.value = this.time;
     this.material.uniforms.energyLevel.value = normalizedEnergy;
     
     for (let i = 0; i < this.particleCount; i++) {
-      // Frequency-based color mapping
       const freqIndex = Math.floor(i / this.particleCount * frequencyData.length);
       const freqValue = frequencyData[freqIndex] / 255.0;
       
       // Enhanced particle motion
-      positions[i * 3] += this.velocities[i * 3];
-      positions[i * 3 + 1] += this.velocities[i * 3 + 1];
-      positions[i * 3 + 2] += this.velocities[i * 3 + 2];
+      positions[i * 3] += this.velocities[i * 3] * (1 + freqValue * 0.5);
+      positions[i * 3 + 1] += this.velocities[i * 3 + 1] * (1 + freqValue * 0.5);
+      positions[i * 3 + 2] += this.velocities[i * 3 + 2] * (1 + freqValue * 0.5);
       
       const distance = Math.sqrt(
         positions[i * 3] * positions[i * 3] +
@@ -113,30 +112,36 @@ export class ParticleSystem {
         positions[i * 3 + 2] * positions[i * 3 + 2]
       );
       
-      // Dynamic vortex effect
+      // More dynamic vortex effect
       const theta = Math.atan2(positions[i * 3 + 2], positions[i * 3]);
-      this.velocities[i * 3] += -Math.sin(theta) * vortexStrength;
-      this.velocities[i * 3 + 2] += Math.cos(theta) * vortexStrength;
+      this.velocities[i * 3] += -Math.sin(theta) * vortexStrength * (1 + freqValue);
+      this.velocities[i * 3 + 2] += Math.cos(theta) * vortexStrength * (1 + freqValue);
       
-      // Expansion/contraction based on energy
-      const targetRadius = baseRadius + freqValue * 2;
-      const force = (targetRadius - distance) * 0.01;
+      // Enhanced expansion/contraction
+      const targetRadius = baseRadius + freqValue * 4; 
+      const force = (targetRadius - distance) * 0.02; 
       this.velocities[i * 3] += positions[i * 3] * force / distance;
       this.velocities[i * 3 + 1] += positions[i * 3 + 1] * force / distance;
       this.velocities[i * 3 + 2] += positions[i * 3 + 2] * force / distance;
       
-      // Enhanced color calculation
-      const hue = (theta + Math.PI) / (Math.PI * 2) + freqValue * 0.2;
-      const saturation = Math.min(1, 0.5 + freqValue * 0.5);
-      const lightness = 0.4 + 0.3 * Math.sin(this.time + distance) + 0.3 * normalizedEnergy;
+      // Enhanced color calculation with more dramatic effects
+      const distanceColor = Math.min(1, distance / (baseRadius * 2));
+      const hue = (theta + Math.PI) / (Math.PI * 2) + 
+                  freqValue * 0.3 + 
+                  Math.sin(this.time + distance * 0.2) * 0.2;
+      const saturation = Math.min(1, 0.7 + freqValue * 0.5 + 
+                        Math.sin(this.time * 2 + distance * 0.1) * 0.3);
+      const lightness = 0.5 + 
+                       0.3 * Math.sin(this.time + distance * 0.2) + 
+                       0.2 * normalizedEnergy;
       
       const color = new THREE.Color().setHSL(hue, saturation, lightness);
       colors[i * 3] = color.r;
       colors[i * 3 + 1] = color.g;
       colors[i * 3 + 2] = color.b;
       
-      // Apply smarter damping
-      const dampingFactor = 0.98 - normalizedEnergy * 0.03;
+      // Smarter damping with frequency response
+      const dampingFactor = 0.98 - normalizedEnergy * 0.04;
       this.velocities[i * 3] *= dampingFactor;
       this.velocities[i * 3 + 1] *= dampingFactor;
       this.velocities[i * 3 + 2] *= dampingFactor;

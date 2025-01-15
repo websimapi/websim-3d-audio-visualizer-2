@@ -159,27 +159,47 @@ export class VisualizerGeometry {
         }
         
         void main() {
-          // Enhanced dynamic color
-          float hue = vFrequencyIndex / 128.0 + time * 0.1 + vPosition.y * 0.1;
-          float saturation = 0.7 + 0.3 * sustainedEnergy;
-          float luminance = 0.5 + 0.3 * energyLevel + 0.2 * sin(time * 2.0 + vPosition.y * 3.0);
+          // Enhanced dynamic color with more spread
+          float distanceFromCenter = length(vPosition) * 0.15;
+          float hue = vFrequencyIndex / 128.0 + 
+                      time * 0.1 + 
+                      distanceFromCenter + 
+                      sin(vPosition.y * 2.0 + time) * 0.2;
+                      
+          // More dramatic saturation variation
+          float saturation = mix(0.8, 1.0, 
+            sin(distanceFromCenter * 3.0 + time) * 0.5 + 0.5) * 
+            (1.0 + sustainedEnergy * 0.5);
+            
+          // Enhanced luminance with more dynamic range
+          float luminance = mix(0.4, 0.9,
+            sin(time * 3.0 + vPosition.y * 4.0) * 0.5 + 0.5) * 
+            (1.0 + energyLevel * 0.6);
           
           vec3 color = hsv2rgb(vec3(hue, saturation, luminance));
           
-          // Enhanced lighting
+          // Enhanced lighting with more dramatic effects
           vec3 lightDir = normalize(lightPos - vPosition);
           float diff = max(dot(vNormal, lightDir), 0.0);
           vec3 reflection = reflect(-lightDir, vNormal);
-          float spec = pow(max(dot(reflection, normalize(vec3(0,0,1))), 0.0), 32.0);
+          float spec = pow(max(dot(reflection, normalize(vec3(0,0,1))), 0.0), 16.0);
           
-          // Dynamic rim lighting
+          // Enhanced rim lighting with color variation
           float rim = 1.0 - max(dot(vNormal, vec3(0,0,1)), 0.0);
-          rim = pow(rim, 2.0) * (1.0 + sustainedEnergy);
+          rim = pow(rim, 1.5) * (1.5 + sustainedEnergy);
+          vec3 rimColor = hsv2rgb(vec3(hue + 0.5, 0.9, 0.9));
           
-          vec3 finalColor = color * (diff + 0.3) + 
-                           vec3(spec) * energyLevel + 
-                           vec3(1,0.9,0.8) * rim * energyLevel;
-                           
+          // Combine all lighting effects with more intensity
+          vec3 finalColor = color * (diff + 0.4) * 1.2 + 
+                            vec3(spec) * energyLevel * 0.8 + 
+                            rimColor * rim * energyLevel * 0.7;
+                            
+          // Add subtle color pulsing
+          finalColor *= 1.0 + sin(time * 2.0) * 0.1 * sustainedEnergy;
+          
+          // Enhance overall vibrancy
+          finalColor = pow(finalColor, vec3(0.8));
+          
           gl_FragColor = vec4(finalColor, 1.0);
         }
       `
