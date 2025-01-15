@@ -4,6 +4,7 @@ export class SpaceEffects {
   constructor(scene) {
     this.scene = scene;
     this.time = 0;
+    this.lastEnergy = 0;
     this.setupStarfield();
     this.setupNebula();
     this.setupWormhole();
@@ -40,24 +41,44 @@ export class SpaceEffects {
     const starMaterial = new THREE.ShaderMaterial({
       uniforms: {
         time: { value: 0 },
-        energyLevel: { value: 0 }
+        energyLevel: { value: 0 },
+        smoothEnergy: { value: 0 }
       },
       vertexShader: `
         attribute float size;
         attribute vec3 color;
         varying vec3 vColor;
         uniform float time;
-        uniform float energyLevel;
+        uniform float smoothEnergy;
+        
+        float smoothNoise(vec3 p) {
+          vec3 i = floor(p);
+          vec3 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          
+          float n = i.x + i.y * 157.0 + 113.0 * i.z;
+          vec4 v = fract(sin(vec4(n, n + 1.0, n + 157.0, n + 158.0)) * 43758.5453);
+          
+          float a = mix(v.x, v.y, f.x);
+          float b = mix(v.z, v.w, f.x);
+          return mix(a, b, f.y);
+        }
         
         void main() {
           vColor = color;
           vec3 pos = position;
-          pos.x += sin(time * 0.5 + position.z * 0.02) * (1.0 + energyLevel);
-          pos.y += cos(time * 0.4 + position.x * 0.02) * (1.0 + energyLevel);
-          pos.z += sin(time * 0.3 + position.y * 0.02) * (1.0 + energyLevel);
+          
+          // Smoother star motion
+          float noise = smoothNoise(vec3(
+            pos.x * 0.02 + time * 0.1,
+            pos.y * 0.02,
+            pos.z * 0.02 + time * 0.05
+          ));
+          
+          pos += normalize(pos) * noise * (1.0 + smoothEnergy) * 2.0;
           
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-          gl_PointSize = size * (1.0 + energyLevel) * (300.0 / -mvPosition.z);
+          gl_PointSize = size * (1.0 + smoothEnergy * 0.5) * (300.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;
         }
       `,
@@ -111,23 +132,27 @@ export class SpaceEffects {
     const nebulaMaterial = new THREE.ShaderMaterial({
       uniforms: {
         time: { value: 0 },
-        energyLevel: { value: 0 }
+        energyLevel: { value: 0 },
+        smoothEnergy: { value: 0 }
       },
       vertexShader: `
         attribute float size;
         attribute vec3 color;
         varying vec3 vColor;
         uniform float time;
-        uniform float energyLevel;
+        uniform float smoothEnergy;
         
         void main() {
           vColor = color;
           vec3 pos = position;
-          float wave = sin(time * 0.2 + length(position) * 0.1) * (1.0 + energyLevel * 2.0);
+          
+          // Smoother nebula motion
+          float wave = sin(time * 0.1 + length(position) * 0.05) * 
+                      (1.0 + smoothEnergy * 2.0);
           pos += normalize(position) * wave;
           
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-          gl_PointSize = size * (1.0 + energyLevel) * (100.0 / -mvPosition.z);
+          gl_PointSize = size * (1.0 + smoothEnergy) * (100.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;
         }
       `,
@@ -176,28 +201,29 @@ export class SpaceEffects {
     const material = new THREE.ShaderMaterial({
       uniforms: {
         time: { value: 0 },
-        energyLevel: { value: 0 }
+        energyLevel: { value: 0 },
+        smoothEnergy: { value: 0 }
       },
       vertexShader: `
         attribute vec3 color;
         varying vec3 vColor;
         uniform float time;
-        uniform float energyLevel;
+        uniform float smoothEnergy;
         
         void main() {
           vColor = color;
           vec3 pos = position;
-          float angle = time * (1.0 + energyLevel) + length(position) * 0.02;
+          float angle = time * (1.0 + smoothEnergy) + length(position) * 0.02;
           mat3 rotation = mat3(
             cos(angle), -sin(angle), 0,
             sin(angle), cos(angle), 0,
             0, 0, 1
           );
           pos = rotation * pos;
-          pos += normalize(pos) * sin(time * 2.0 + length(pos)) * energyLevel * 5.0;
+          pos += normalize(pos) * sin(time * 2.0 + length(pos)) * smoothEnergy * 5.0;
           
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-          gl_PointSize = 3.0 * (1.0 + energyLevel) * (300.0 / -mvPosition.z);
+          gl_PointSize = 3.0 * (1.0 + smoothEnergy) * (300.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;
         }
       `,
@@ -223,19 +249,29 @@ export class SpaceEffects {
     const time = Date.now() * 0.001;
     const avgEnergy = frequencyData.reduce((a, b) => a + b, 0) / frequencyData.length / 255;
     
-    // Update starfield
-    this.starfield.material.uniforms.time.value = time;
-    this.starfield.material.uniforms.energyLevel.value = avgEnergy;
-    this.starfield.rotation.y = time * 0.05;
+    // Smooth energy transition
+    this.lastEnergy = this.lastEnergy * 0.95 + avgEnergy * 0.05;
     
-    // Update nebula
-    this.nebula.material.uniforms.time.value = time;
-    this.nebula.material.uniforms.energyLevel.value = avgEnergy;
-    this.nebula.rotation.z = time * 0.02;
+    // Update all effects with smooth energy
+    if (this.starfield) {
+      this.starfield.material.uniforms.time.value = time;
+      this.starfield.material.uniforms.energyLevel.value = avgEnergy;
+      this.starfield.material.uniforms.smoothEnergy.value = this.lastEnergy;
+      this.starfield.rotation.y = time * 0.02; // Slower rotation
+    }
     
-    // Update wormhole
-    this.wormhole.material.uniforms.time.value = time;
-    this.wormhole.material.uniforms.energyLevel.value = avgEnergy;
-    this.wormhole.rotation.z = time * 0.1 * (1 + avgEnergy);
+    if (this.nebula) {
+      this.nebula.material.uniforms.time.value = time;
+      this.nebula.material.uniforms.energyLevel.value = avgEnergy;
+      this.nebula.material.uniforms.smoothEnergy.value = this.lastEnergy;
+      this.nebula.rotation.z = time * 0.01; // Slower rotation
+    }
+    
+    if (this.wormhole) {
+      this.wormhole.material.uniforms.time.value = time;
+      this.wormhole.material.uniforms.energyLevel.value = avgEnergy;
+      this.wormhole.material.uniforms.smoothEnergy.value = this.lastEnergy;
+      this.wormhole.rotation.z = time * 0.05 * (1 + this.lastEnergy); // Smoother rotation
+    }
   }
 }
