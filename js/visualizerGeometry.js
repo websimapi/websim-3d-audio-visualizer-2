@@ -127,16 +127,16 @@ export class VisualizerGeometry {
           float blobPhase = time * 2.0;
           float blobNoise = snoise(position * 0.3 + vec3(blobPhase));
           
-          // Enhanced displacement for better spread
+          // Combine multiple displacement effects
           vec3 displacement = normal * (
-            (sin(position.y * 10.0 + time) * energyLevel * 0.5) +
-            (noise * energyLevel * 0.6) +
-            (freqValue * 0.05) +
-            (blobNoise * sustainedEnergy * 0.8)
+            (sin(position.y * 10.0 + time) * energyLevel * 0.3) +
+            (noise * energyLevel * 0.4) +
+            (freqValue * 0.03) +
+            (blobNoise * sustainedEnergy * 0.5)
           );
           
-          // Increased growth factor
-          float growthFactor = 1.0 + sustainedEnergy * 1.2 * blobScale;
+          // Apply growth factor
+          float growthFactor = 1.0 + sustainedEnergy * 0.8 * blobScale;
           vec3 newPosition = (position * growthFactor + displacement);
           
           gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
@@ -160,20 +160,21 @@ export class VisualizerGeometry {
         
         void main() {
           // Enhanced dynamic color with more spread
-          float distanceFromCenter = length(vPosition) * 0.2;
+          float distanceFromCenter = length(vPosition) * 0.15;
           float hue = vFrequencyIndex / 128.0 + 
-                      time * 0.15 + 
+                      time * 0.1 + 
                       distanceFromCenter + 
-                      sin(vPosition.y * 3.0 + time) * 0.3;
+                      sin(vPosition.y * 2.0 + time) * 0.2;
                       
-          // More dramatic saturation and luminance
-          float saturation = mix(0.7, 1.0, 
-            sin(distanceFromCenter * 4.0 + time) * 0.5 + 0.5) * 
-            (1.0 + sustainedEnergy * 0.8);
+          // More dramatic saturation variation
+          float saturation = mix(0.8, 1.0, 
+            sin(distanceFromCenter * 3.0 + time) * 0.5 + 0.5) * 
+            (1.0 + sustainedEnergy * 0.5);
             
-          float luminance = mix(0.3, 1.0,
-            sin(time * 4.0 + vPosition.y * 5.0) * 0.5 + 0.5) * 
-            (1.0 + energyLevel * 0.8);
+          // Enhanced luminance with more dynamic range
+          float luminance = mix(0.4, 0.9,
+            sin(time * 3.0 + vPosition.y * 4.0) * 0.5 + 0.5) * 
+            (1.0 + energyLevel * 0.6);
           
           vec3 color = hsv2rgb(vec3(hue, saturation, luminance));
           
@@ -183,21 +184,21 @@ export class VisualizerGeometry {
           vec3 reflection = reflect(-lightDir, vNormal);
           float spec = pow(max(dot(reflection, normalize(vec3(0,0,1))), 0.0), 16.0);
           
-          // Enhanced rim lighting
+          // Enhanced rim lighting with color variation
           float rim = 1.0 - max(dot(vNormal, vec3(0,0,1)), 0.0);
-          rim = pow(rim, 1.2) * (2.0 + sustainedEnergy);
+          rim = pow(rim, 1.5) * (1.5 + sustainedEnergy);
           vec3 rimColor = hsv2rgb(vec3(hue + 0.5, 0.9, 0.9));
           
-          // Increased color intensity and spread
-          vec3 finalColor = color * (diff + 0.5) * 1.5 + 
-                            vec3(spec) * energyLevel * 1.2 + 
-                            rimColor * rim * energyLevel * 1.0;
+          // Combine all lighting effects with more intensity
+          vec3 finalColor = color * (diff + 0.4) * 1.2 + 
+                            vec3(spec) * energyLevel * 0.8 + 
+                            rimColor * rim * energyLevel * 0.7;
                             
-          // Enhanced color pulsing
-          finalColor *= 1.0 + sin(time * 3.0) * 0.2 * sustainedEnergy;
+          // Add subtle color pulsing
+          finalColor *= 1.0 + sin(time * 2.0) * 0.1 * sustainedEnergy;
           
-          // Increased vibrancy
-          finalColor = pow(finalColor, vec3(0.7));
+          // Enhance overall vibrancy
+          finalColor = pow(finalColor, vec3(0.8));
           
           gl_FragColor = vec4(finalColor, 1.0);
         }

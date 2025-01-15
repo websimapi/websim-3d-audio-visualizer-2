@@ -2,60 +2,31 @@ import * as THREE from 'https://cdn.skypack.dev/three@0.132.2';
 
 export class ParticleSystem {
   constructor() {
-    this.particleCount = 2500; 
+    this.particleCount = 2000;
     this.positions = new Float32Array(this.particleCount * 3);
     this.velocities = new Float32Array(this.particleCount * 3);
     this.colors = new Float32Array(this.particleCount * 3);
     this.time = 0;
-    this.lastEnergy = 0; 
     
     this.geometry = new THREE.BufferGeometry();
     
+    // Create custom particle material with shader
     this.material = new THREE.ShaderMaterial({
       uniforms: {
         time: { value: 0 },
-        energyLevel: { value: 0.0 },
-        smoothEnergy: { value: 0.0 } 
+        energyLevel: { value: 0.0 }
       },
       vertexShader: `
         attribute vec3 color;
         varying vec3 vColor;
         uniform float time;
         uniform float energyLevel;
-        uniform float smoothEnergy;
-        
-        float noise(vec3 p) {
-          vec3 i = floor(p);
-          vec3 f = fract(p);
-          f = f * f * (3.0 - 2.0 * f);
-          
-          float n = i.x + i.y * 157.0 + 113.0 * i.z;
-          vec4 v = fract(sin(vec4(n, n + 1.0, n + 157.0, n + 158.0)) * 43758.5453);
-          
-          float a = mix(v.x, v.y, f.x);
-          float b = mix(v.z, v.w, f.x);
-          return mix(a, b, f.y);
-        }
         
         void main() {
           vColor = color;
-          vec3 pos = position;
-          
-          float spiralRadius = length(pos.xz);
-          float angle = atan(pos.z, pos.x) + time * (0.1 + smoothEnergy * 0.1);
-          float heightOffset = noise(vec3(angle * 0.5, time * 0.2, spiralRadius * 0.1)) * 2.0;
-          
-          pos.x = spiralRadius * cos(angle);
-          pos.z = spiralRadius * sin(angle);
-          pos.y += heightOffset * (1.0 + smoothEnergy);
-          
-          float wave = sin(time * 0.5 + spiralRadius * 0.2) * 
-                      cos(angle * 3.0) * 
-                      (1.0 + smoothEnergy);
-          pos += normalize(position) * wave;
-          
-          vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-          float size = 2.0 * (1.0 + smoothEnergy);
+          // Apply spiral motion
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          float size = 2.0 * (1.0 + energyLevel);
           gl_PointSize = size * (300.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;
         }
@@ -65,8 +36,11 @@ export class ParticleSystem {
         
         void main() {
           float r = length(gl_PointCoord - vec2(0.5));
-          float alpha = smoothstep(0.5, 0.2, r); 
-          gl_FragColor = vec4(vColor, alpha);
+          if (r > 0.5) discard;
+          
+          // Smooth particle rendering
+          float smoothness = 1.0 - smoothstep(0.3, 0.5, r);
+          gl_FragColor = vec4(vColor, smoothness);
         }
       `,
       transparent: true,
@@ -80,19 +54,23 @@ export class ParticleSystem {
 
   initializeParticles() {
     for (let i = 0; i < this.particleCount; i++) {
+      // Complex spiral distribution
       const t = i / this.particleCount;
-      const spiralAngle = 50 * t * Math.PI * 2;
-      const radius = 5 + (Math.pow(t, 0.5) * 15); 
+      const theta = 50 * t * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      const r = 5 + Math.random() * 2;
       
-      this.positions[i * 3] = radius * Math.cos(spiralAngle);
-      this.positions[i * 3 + 1] = (Math.random() - 0.5) * 10;
-      this.positions[i * 3 + 2] = radius * Math.sin(spiralAngle);
+      this.positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      this.positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+      this.positions[i * 3 + 2] = r * Math.cos(phi);
       
-      this.velocities[i * 3] = (Math.random() - 0.5) * 0.05;
-      this.velocities[i * 3 + 1] = (Math.random() - 0.5) * 0.05;
-      this.velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.05;
+      // Initialize velocities with curl noise
+      this.velocities[i * 3] = (Math.random() - 0.5) * 0.1;
+      this.velocities[i * 3 + 1] = (Math.random() - 0.5) * 0.1;
+      this.velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.1;
       
-      const hue = spiralAngle / (Math.PI * 2);
+      // Initialize colors based on position
+      const hue = theta / (Math.PI * 2);
       const color = new THREE.Color().setHSL(hue, 0.8, 0.5);
       this.colors[i * 3] = color.r;
       this.colors[i * 3 + 1] = color.g;
@@ -111,48 +89,62 @@ export class ParticleSystem {
     const avgFrequency = frequencyData.reduce((a, b) => a + b, 0) / frequencyData.length;
     const normalizedEnergy = avgFrequency / 255.0;
     
-    this.lastEnergy = this.lastEnergy * 0.95 + normalizedEnergy * 0.05;
-    this.material.uniforms.smoothEnergy.value = this.lastEnergy;
-    this.material.uniforms.energyLevel.value = normalizedEnergy;
-    this.material.uniforms.time.value = this.time;
+    // Enhanced energy-based effects
+    const baseRadius = 5 + normalizedEnergy * 5; 
+    const vortexStrength = 0.2 * normalizedEnergy; 
+    const expansionRate = 0.03 * normalizedEnergy; 
     
-    const colorUpdateSpeed = 0.1;
+    this.material.uniforms.time.value = this.time;
+    this.material.uniforms.energyLevel.value = normalizedEnergy;
+    
     for (let i = 0; i < this.particleCount; i++) {
       const freqIndex = Math.floor(i / this.particleCount * frequencyData.length);
       const freqValue = frequencyData[freqIndex] / 255.0;
       
-      const radius = Math.sqrt(
+      // Enhanced particle motion
+      positions[i * 3] += this.velocities[i * 3] * (1 + freqValue * 0.5);
+      positions[i * 3 + 1] += this.velocities[i * 3 + 1] * (1 + freqValue * 0.5);
+      positions[i * 3 + 2] += this.velocities[i * 3 + 2] * (1 + freqValue * 0.5);
+      
+      const distance = Math.sqrt(
         positions[i * 3] * positions[i * 3] +
+        positions[i * 3 + 1] * positions[i * 3 + 1] +
         positions[i * 3 + 2] * positions[i * 3 + 2]
       );
       
-      const angle = Math.atan2(positions[i * 3 + 2], positions[i * 3]);
-      const newAngle = angle + 0.002 * (1 + this.lastEnergy);
+      // More dynamic vortex effect
+      const theta = Math.atan2(positions[i * 3 + 2], positions[i * 3]);
+      this.velocities[i * 3] += -Math.sin(theta) * vortexStrength * (1 + freqValue);
+      this.velocities[i * 3 + 2] += Math.cos(theta) * vortexStrength * (1 + freqValue);
       
-      positions[i * 3] = radius * Math.cos(newAngle);
-      positions[i * 3 + 2] = radius * Math.sin(newAngle);
+      // Enhanced expansion/contraction
+      const targetRadius = baseRadius + freqValue * 4; 
+      const force = (targetRadius - distance) * 0.02; 
+      this.velocities[i * 3] += positions[i * 3] * force / distance;
+      this.velocities[i * 3 + 1] += positions[i * 3 + 1] * force / distance;
+      this.velocities[i * 3 + 2] += positions[i * 3 + 2] * force / distance;
       
-      positions[i * 3 + 1] += this.velocities[i * 3 + 1];
-      this.velocities[i * 3 + 1] += (Math.random() - 0.5) * 0.01 * this.lastEnergy;
-      this.velocities[i * 3 + 1] *= 0.98; 
+      // Enhanced color calculation with more dramatic effects
+      const distanceColor = Math.min(1, distance / (baseRadius * 2));
+      const hue = (theta + Math.PI) / (Math.PI * 2) + 
+                  freqValue * 0.3 + 
+                  Math.sin(this.time + distance * 0.2) * 0.2;
+      const saturation = Math.min(1, 0.7 + freqValue * 0.5 + 
+                        Math.sin(this.time * 2 + distance * 0.1) * 0.3);
+      const lightness = 0.5 + 
+                       0.3 * Math.sin(this.time + distance * 0.2) + 
+                       0.2 * normalizedEnergy;
       
-      const targetHue = (angle + Math.PI) / (Math.PI * 2) + freqValue * 0.2;
-      const currentColor = new THREE.Color(
-        colors[i * 3],
-        colors[i * 3 + 1],
-        colors[i * 3 + 2]
-      );
-      const targetColor = new THREE.Color().setHSL(
-        targetHue,
-        0.8 + this.lastEnergy * 0.2,
-        0.5 + this.lastEnergy * 0.3
-      );
+      const color = new THREE.Color().setHSL(hue, saturation, lightness);
+      colors[i * 3] = color.r;
+      colors[i * 3 + 1] = color.g;
+      colors[i * 3 + 2] = color.b;
       
-      currentColor.lerp(targetColor, colorUpdateSpeed);
-      
-      colors[i * 3] = currentColor.r;
-      colors[i * 3 + 1] = currentColor.g;
-      colors[i * 3 + 2] = currentColor.b;
+      // Smarter damping with frequency response
+      const dampingFactor = 0.98 - normalizedEnergy * 0.04;
+      this.velocities[i * 3] *= dampingFactor;
+      this.velocities[i * 3 + 1] *= dampingFactor;
+      this.velocities[i * 3 + 2] *= dampingFactor;
     }
     
     this.geometry.attributes.position.needsUpdate = true;

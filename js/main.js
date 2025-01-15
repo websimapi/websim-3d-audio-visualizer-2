@@ -13,41 +13,42 @@ class AudioVisualizer {
     this.animate();
     this.lastBeat = 0;
     this.beatThreshold = 0.5;
-    this.beatHoldTime = 200; // ms
-    this.activeBackground = 0;
-    this.transitionTime = 0;
-    this.backgroundTransitionDuration = 5000; // 5 seconds
+    this.beatHoldTime = 200;
   }
 
   setup() {
-    // Set up renderer
+    // Set up renderer with better quality
     this.renderer = new THREE.WebGLRenderer({
       canvas: document.getElementById('visualizer'),
-      antialias: true
+      antialias: true,
+      alpha: true
     });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setPixelRatio(window.devicePixelRatio);
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
     
     // Set up audio analyzer
     this.audioAnalyzer = new AudioAnalyzer();
-    
-    // Initialize components
     this.playing = false;
   }
 
   createScene() {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x000000);
-    this.camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-    this.camera.position.set(0, 10, 30);
-    this.camera.far = 1000;
-    this.camera.updateProjectionMatrix();
+    this.scene.fog = new THREE.FogExp2(0x000000, 0.001);
     
-    // Add orbit controls
+    this.camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 2000);
+    this.camera.position.set(0, 5, 15);
+    
+    // Enhanced orbit controls
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.05;
+    this.controls.maxDistance = 1000;
+    this.controls.autoRotate = true;
+    this.controls.autoRotateSpeed = 0.5;
     
-    // Create geometry
+    // Create main visualizer geometry
     this.visualizerGeometry = new VisualizerGeometry();
     this.scene.add(this.visualizerGeometry.mesh);
     
@@ -56,32 +57,49 @@ class AudioVisualizer {
     this.scene.add(this.particleSystem.points);
     
     // Add space effects
-    this.spaceEffects = new SpaceEffects(this.scene);
+    this.spaceEffects = new SpaceEffects();
+    this.scene.add(this.spaceEffects.group);
     
-    // Enhanced lighting setup
-    const ambientLight = new THREE.AmbientLight(0x404040);
+    // Enhanced lighting
+    const ambientLight = new THREE.AmbientLight(0x111111);
     this.scene.add(ambientLight);
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-    directionalLight.position.set(1, 1, 1);
-    this.scene.add(directionalLight);
-
-    // Add point lights for dynamic lighting
+    // Add dynamic point lights
     this.pointLights = [];
-    const colors = [0xff0000, 0x00ff00, 0x0000ff];
+    const colors = [0xff3366, 0x33ff66, 0x3366ff];
     for (let i = 0; i < 3; i++) {
-      const light = new THREE.PointLight(colors[i], 1, 50);
+      const light = new THREE.PointLight(colors[i], 2, 100);
       light.position.set(
-        Math.sin(i * Math.PI * 2/3) * 10,
+        Math.sin(i * Math.PI * 2/3) * 20,
         0,
-        Math.cos(i * Math.PI * 2/3) * 10
+        Math.cos(i * Math.PI * 2/3) * 20
       );
       this.pointLights.push(light);
       this.scene.add(light);
     }
-    
-    // Add fog for depth effect
-    this.scene.fog = new THREE.FogExp2(0x000000, 0.001);
+
+    // Create starfield background
+    const starGeometry = new THREE.BufferGeometry();
+    const starPositions = new Float32Array(6000);
+    for (let i = 0; i < 2000; i++) {
+      const i3 = i * 3;
+      const radius = Math.random() * 1000 + 100;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(Math.random() * 2 - 1);
+      starPositions[i3] = radius * Math.sin(phi) * Math.cos(theta);
+      starPositions[i3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+      starPositions[i3 + 2] = radius * Math.cos(phi);
+    }
+    starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+    const starMaterial = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 2,
+      transparent: true,
+      opacity: 0.8,
+      blending: THREE.AdditiveBlending
+    });
+    this.starfield = new THREE.Points(starGeometry, starMaterial);
+    this.scene.add(this.starfield);
   }
 
   bindEvents() {
@@ -115,66 +133,36 @@ class AudioVisualizer {
       const frequencyData = this.audioAnalyzer.getFrequencyData();
       const avgEnergy = frequencyData.reduce((a, b) => a + b, 0) / frequencyData.length;
       
-      // Update all visualizers
+      // Beat detection
+      if (avgEnergy > this.beatThreshold && Date.now() - this.lastBeat > this.beatHoldTime) {
+        this.onBeat(avgEnergy);
+        this.lastBeat = Date.now();
+      }
+      
       this.visualizerGeometry.update(frequencyData);
       this.particleSystem.update(frequencyData);
       this.spaceEffects.update(frequencyData);
       this.updateLights(frequencyData);
       
-      // Handle background transitions
-      this.updateBackgroundTransitions(avgEnergy);
-      
-      // Beat detection
-      if (avgEnergy > this.beatThreshold && Date.now() - this.lastBeat > this.beatHoldTime) {
-        this.onBeat();
-        this.lastBeat = Date.now();
-      }
+      // Rotate starfield
+      this.starfield.rotation.y += 0.0001;
+      this.starfield.rotation.x += 0.0001;
     }
     
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }
 
-  onBeat() {
-    // Trigger visual effects on beat
-    this.camera.position.z += Math.random() * 0.5 - 0.25;
-    this.visualizerGeometry.material.uniforms.blobScale.value = 1.2;
+  onBeat(energy) {
+    // Enhanced beat reactions
+    const intensity = energy / 255;
+    this.camera.position.z += Math.random() * intensity - intensity/2;
+    this.visualizerGeometry.material.uniforms.blobScale.value = 1.2 + intensity * 0.3;
+    this.spaceEffects.onBeat(intensity);
+    
     setTimeout(() => {
       this.visualizerGeometry.material.uniforms.blobScale.value = 1.0;
     }, 200);
-  }
-
-  updateBackgroundTransitions(avgEnergy) {
-    const now = Date.now();
-    
-    // Trigger transition based on energy and time
-    if (avgEnergy > 200 && now - this.transitionTime > this.backgroundTransitionDuration) {
-      this.activeBackground = (this.activeBackground + 1) % 3;
-      this.transitionTime = now;
-      
-      // Adjust camera and effects based on active background
-      switch(this.activeBackground) {
-        case 0: // Starfield focus
-          this.camera.position.z = 30;
-          break;
-        case 1: // Nebula focus
-          this.camera.position.z = 50;
-          break;
-        case 2: // Wormhole focus
-          this.camera.position.z = 70;
-          break;
-      }
-    }
-    
-    // Smooth camera transitions
-    this.camera.position.lerp(
-      new THREE.Vector3(
-        this.camera.position.x,
-        this.camera.position.y,
-        this.camera.position.z
-      ),
-      0.02
-    );
   }
 
   updateLights(frequencyData) {
