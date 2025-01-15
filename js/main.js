@@ -181,7 +181,7 @@ class AudioVisualizer {
       const avgEnergy = frequencyData.reduce((a, b) => a + b, 0) / frequencyData.length;
       
       if (avgEnergy > this.beatThreshold && Date.now() - this.lastBeat > this.beatHoldTime) {
-        this.onBeat(avgEnergy);
+        this.onBeat(avgEnergy/255); 
         this.lastBeat = Date.now();
       }
       
@@ -199,14 +199,15 @@ class AudioVisualizer {
     this.renderer.render(this.scene, this.camera);
   }
 
-  onBeat(energy) {
-    const intensity = energy / 255;
-    this.camera.position.z += Math.random() * intensity - intensity/2;
-    this.visualizerGeometry.material.uniforms.blobScale.value = 1.2 + intensity * 0.3;
-    this.spaceEffects.onBeat(intensity);
+  onBeat(intensity) {
+    this.camera.position.z += (Math.random() * 2 - 1) * intensity;
+    
+    if (this.spaceEffects) {
+      this.spaceEffects.onBeat(intensity);
+    }
     
     setTimeout(() => {
-      this.visualizerGeometry.material.uniforms.blobScale.value = 1.0;
+      this.camera.position.lerp(new THREE.Vector3(0, 5, 15), 0.1);
     }, 200);
   }
 
@@ -220,7 +221,6 @@ class AudioVisualizer {
       light.position.y = Math.sin(time * 2) * 3;
     });
   }
-
 }
 
 new AudioVisualizer();
