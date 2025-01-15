@@ -13,6 +13,10 @@ class AudioVisualizer {
     this.lastBeat = 0;
     this.beatThreshold = 0.5;
     this.beatHoldTime = 200; // ms
+    this.visualizerForms = [];
+    this.activeVisualizer = 0;
+    this.transitionTimer = 0;
+    this.time = 0;
   }
 
   setup() {
@@ -41,9 +45,20 @@ class AudioVisualizer {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.05;
     
-    // Create geometry
-    this.visualizerGeometry = new VisualizerGeometry();
-    this.scene.add(this.visualizerGeometry.mesh);
+    // Create multiple visualizer forms
+    const formPositions = [
+      new THREE.Vector3(-15, 0, 0),
+      new THREE.Vector3(15, 0, 0),
+      new THREE.Vector3(0, 15, 0),
+      new THREE.Vector3(0, -15, 0)
+    ];
+    
+    for(let i = 0; i < 4; i++) {
+      const visualizer = new VisualizerGeometry();
+      visualizer.mesh.position.copy(formPositions[i]);
+      this.visualizerForms.push(visualizer);
+      this.scene.add(visualizer.mesh);
+    }
     
     // Create particle system
     this.particleSystem = new ParticleSystem();
@@ -70,6 +85,14 @@ class AudioVisualizer {
       this.pointLights.push(light);
       this.scene.add(light);
     }
+    
+    // Enhanced camera movement
+    this.cameraPath = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0, 30),
+      new THREE.Vector3(30, 0, 0),
+      new THREE.Vector3(0, 30, 0),
+      new THREE.Vector3(-30, 0, 0)
+    ]);
   }
 
   bindEvents() {
@@ -96,8 +119,21 @@ class AudioVisualizer {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
+  updateCamera(frequencyData) {
+    const avgEnergy = frequencyData.reduce((a, b) => a + b, 0) / frequencyData.length / 255;
+    
+    // Move camera along path based on music energy
+    const pathPosition = (this.time * 0.1 + avgEnergy) % 1;
+    const targetPosition = this.cameraPath.getPointAt(pathPosition);
+    
+    // Smooth camera movement
+    this.camera.position.lerp(targetPosition, 0.05);
+    this.camera.lookAt(0, 0, 0);
+  }
+
   animate() {
     requestAnimationFrame(this.animate.bind(this));
+    this.time += 0.016;
     
     if (this.playing) {
       const frequencyData = this.audioAnalyzer.getFrequencyData();
@@ -109,8 +145,24 @@ class AudioVisualizer {
         this.lastBeat = Date.now();
       }
       
-      this.visualizerGeometry.update(frequencyData);
-      this.particleSystem.update(frequencyData);
+      // Update all visualizers
+      this.visualizerForms.forEach(visualizer => {
+        visualizer.update(frequencyData);
+      });
+      
+      this.updateCamera(frequencyData);
+      
+      // Handle visualizer transitions
+      this.transitionTimer += 0.016;
+      if(this.transitionTimer > 5.0) { // Switch focus every 5 seconds
+        this.transitionTimer = 0;
+        this.activeVisualizer = (this.activeVisualizer + 1) % this.visualizerForms.length;
+        
+        // Trigger form transition for active visualizer
+        const nextForm = Math.floor(Math.random() * 4);
+        this.visualizerForms[this.activeVisualizer].transitionToForm(nextForm);
+      }
+      
       this.updateLights(frequencyData);
     }
     
@@ -121,9 +173,9 @@ class AudioVisualizer {
   onBeat() {
     // Trigger visual effects on beat
     this.camera.position.z += Math.random() * 0.5 - 0.25;
-    this.visualizerGeometry.material.uniforms.blobScale.value = 1.2;
+    this.visualizerForms[this.activeVisualizer].material.uniforms.blobScale.value = 1.2;
     setTimeout(() => {
-      this.visualizerGeometry.material.uniforms.blobScale.value = 1.0;
+      this.visualizerForms[this.activeVisualizer].material.uniforms.blobScale.value = 1.0;
     }, 200);
   }
 
