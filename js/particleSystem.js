@@ -2,13 +2,13 @@ import * as THREE from 'https://cdn.skypack.dev/three@0.132.2';
 
 export class ParticleSystem {
   constructor() {
-    this.particleCount = 3000; 
+    this.particleCount = 3000;
     this.positions = new Float32Array(this.particleCount * 3);
     this.velocities = new Float32Array(this.particleCount * 3);
     this.accelerations = new Float32Array(this.particleCount * 3);
     this.colors = new Float32Array(this.particleCount * 3);
     this.lifetimes = new Float32Array(this.particleCount);
-    this.maxDistance = 50; 
+    this.maxDistance = 100; // Increased max distance
     this.time = 0;
     
     this.geometry = new THREE.BufferGeometry();
@@ -41,29 +41,8 @@ export class ParticleSystem {
           float dist = length(pos);
           float scale = cubicPulse(maxDistance * 0.5, maxDistance * 0.5, dist);
           
-          float angle = time * (0.1 + energyLevel * 0.2);
-          mat3 rotationY = mat3(
-            cos(angle), 0.0, sin(angle),
-            0.0, 1.0, 0.0,
-            -sin(angle), 0.0, cos(angle)
-          );
-          
-          mat3 rotationX = mat3(
-            1.0, 0.0, 0.0,
-            0.0, cos(angle * 0.7), -sin(angle * 0.7),
-            0.0, sin(angle * 0.7), cos(angle * 0.7)
-          );
-          
-          mat3 rotationZ = mat3(
-            cos(angle * 0.5), -sin(angle * 0.5), 0.0,
-            sin(angle * 0.5), cos(angle * 0.5), 0.0,
-            0.0, 0.0, 1.0
-          );
-          
-          pos = rotationZ * rotationY * rotationX * pos;
-          
           vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-          float size = 3.0 * (1.0 + energyLevel) * (1.0 - dist/maxDistance);
+          float size = 4.0 * (1.0 + energyLevel) * (1.0 - dist/maxDistance);
           gl_PointSize = size * (300.0 / -mvPosition.z);
           gl_Position = projectionMatrix * mvPosition;
         }
@@ -100,6 +79,7 @@ export class ParticleSystem {
   }
 
   resetParticle(i, isInit = false) {
+    // Spherical distribution with full 6DOF
     const phi = Math.acos(2 * Math.random() - 1);
     const theta = 2 * Math.PI * Math.random();
     const r = isInit ? 
@@ -110,22 +90,28 @@ export class ParticleSystem {
     this.positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
     this.positions[i * 3 + 2] = r * Math.cos(phi);
 
-    const speed = 0.5 + Math.random() * 2;
-    this.velocities[i * 3] = (Math.random() - 0.5) * speed;
-    this.velocities[i * 3 + 1] = (Math.random() - 0.5) * speed;
-    this.velocities[i * 3 + 2] = (Math.random() - 0.5) * speed;
+    // Controlled initial velocity
+    const speed = 0.2 + Math.random() * 0.3; // Reduced speed range
+    const velPhi = Math.acos(2 * Math.random() - 1);
+    const velTheta = 2 * Math.PI * Math.random();
+    
+    this.velocities[i * 3] = speed * Math.sin(velPhi) * Math.cos(velTheta);
+    this.velocities[i * 3 + 1] = speed * Math.sin(velPhi) * Math.sin(velTheta);
+    this.velocities[i * 3 + 2] = speed * Math.cos(velPhi);
 
+    // Gentle rotation influence
     const rotAxis = new THREE.Vector3(
       Math.random() - 0.5,
       Math.random() - 0.5,
       Math.random() - 0.5
     ).normalize();
     
-    const rotSpeed = Math.random() * 0.02;
+    const rotSpeed = Math.random() * 0.01; // Reduced rotation speed
     this.accelerations[i * 3] = rotAxis.x * rotSpeed;
     this.accelerations[i * 3 + 1] = rotAxis.y * rotSpeed;
     this.accelerations[i * 3 + 2] = rotAxis.z * rotSpeed;
 
+    // Music-reactive colors
     const hue = Math.random();
     const saturation = 0.8 + Math.random() * 0.2;
     const lightness = 0.5 + Math.random() * 0.3;
@@ -153,25 +139,32 @@ export class ParticleSystem {
       const freqIndex = Math.floor(i / this.particleCount * frequencyData.length);
       const freqValue = frequencyData[freqIndex] / 255.0;
       
-      this.velocities[i * 3] += this.accelerations[i * 3] + (Math.random() - 0.5) * freqValue * 0.2;
-      this.velocities[i * 3 + 1] += this.accelerations[i * 3 + 1] + (Math.random() - 0.5) * freqValue * 0.2;
-      this.velocities[i * 3 + 2] += this.accelerations[i * 3 + 2] + (Math.random() - 0.5) * freqValue * 0.2;
+      // Music-influenced motion
+      const energyFactor = freqValue * 0.1; // Reduced energy influence
       
-      positions[i * 3] += this.velocities[i * 3] * (1 + freqValue);
-      positions[i * 3 + 1] += this.velocities[i * 3 + 1] * (1 + freqValue);
-      positions[i * 3 + 2] += this.velocities[i * 3 + 2] * (1 + freqValue);
+      // Update velocities with music influence
+      this.velocities[i * 3] += this.accelerations[i * 3] + (Math.random() - 0.5) * energyFactor;
+      this.velocities[i * 3 + 1] += this.accelerations[i * 3 + 1] + (Math.random() - 0.5) * energyFactor;
+      this.velocities[i * 3 + 2] += this.accelerations[i * 3 + 2] + (Math.random() - 0.5) * energyFactor;
       
+      // Apply velocities to positions
+      positions[i * 3] += this.velocities[i * 3] * (1 + freqValue * 0.5);
+      positions[i * 3 + 1] += this.velocities[i * 3 + 1] * (1 + freqValue * 0.5);
+      positions[i * 3 + 2] += this.velocities[i * 3 + 2] * (1 + freqValue * 0.5);
+      
+      // Check distance and reset if needed
       const distance = Math.sqrt(
         positions[i * 3] * positions[i * 3] +
         positions[i * 3 + 1] * positions[i * 3 + 1] +
         positions[i * 3 + 2] * positions[i * 3 + 2]
       );
       
-      if (distance > this.maxDistance || Math.random() < 0.001) {
+      if (distance > this.maxDistance || Math.random() < 0.0005) {
         this.resetParticle(i);
       }
       
-      this.lifetimes[i] += 0.01 + freqValue * 0.02;
+      // Update colors based on music and position
+      this.lifetimes[i] += 0.005 + freqValue * 0.01; // Slower color cycling
       const hue = (this.lifetimes[i] + distance / this.maxDistance) % 1;
       const saturation = 0.8 + freqValue * 0.2;
       const lightness = 0.5 + freqValue * 0.3;
@@ -181,7 +174,8 @@ export class ParticleSystem {
       colors[i * 3 + 1] = color.g;
       colors[i * 3 + 2] = color.b;
       
-      const damping = 0.98 - normalizedEnergy * 0.03;
+      // Apply stronger damping for more controlled motion
+      const damping = 0.99 - normalizedEnergy * 0.01;
       this.velocities[i * 3] *= damping;
       this.velocities[i * 3 + 1] *= damping;
       this.velocities[i * 3 + 2] *= damping;
