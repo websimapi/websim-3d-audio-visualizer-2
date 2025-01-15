@@ -5,19 +5,31 @@
     body { 
       margin: 0;
       overflow: hidden;
+      background: #000000; /* Ensure black background */
     }
     .controls {
       position: fixed;
       top: 10px;
       left: 10px;
       z-index: 100;
-      background: rgba(0,0,0,0.7);
+      background: rgba(0,0,0,0.8);
       padding: 10px;
       border-radius: 5px;
-      color: white;
+      color: #ffffff;
     }
     input[type="file"] {
-      color: white;
+      color: #ffffff;
+    }
+    button {
+      background: #333;
+      color: #fff;
+      border: 1px solid #666;
+      padding: 5px 10px;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #444;
     }
   </style>
 </head>
