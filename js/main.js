@@ -3,6 +3,7 @@ import { OrbitControls } from 'https://cdn.skypack.dev/three@0.132.2/examples/js
 import { AudioAnalyzer } from './audioAnalyzer.js';
 import { ParticleSystem } from './particleSystem.js';
 import { VisualizerGeometry } from './visualizerGeometry.js';
+import { SpaceEffects } from './spaceEffects.js';
 
 class AudioVisualizer {
   constructor() {
@@ -13,10 +14,9 @@ class AudioVisualizer {
     this.lastBeat = 0;
     this.beatThreshold = 0.5;
     this.beatHoldTime = 200; // ms
-    this.visualizerForms = [];
-    this.activeVisualizer = 0;
-    this.transitionTimer = 0;
-    this.time = 0;
+    this.activeBackground = 0;
+    this.transitionTime = 0;
+    this.backgroundTransitionDuration = 5000; // 5 seconds
   }
 
   setup() {
@@ -38,31 +38,25 @@ class AudioVisualizer {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x000000);
     this.camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-    this.camera.position.set(0, 5, 15);
+    this.camera.position.set(0, 10, 30);
+    this.camera.far = 1000;
+    this.camera.updateProjectionMatrix();
     
     // Add orbit controls
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.05;
     
-    // Create multiple visualizer forms
-    const formPositions = [
-      new THREE.Vector3(-15, 0, 0),
-      new THREE.Vector3(15, 0, 0),
-      new THREE.Vector3(0, 15, 0),
-      new THREE.Vector3(0, -15, 0)
-    ];
-    
-    for(let i = 0; i < 4; i++) {
-      const visualizer = new VisualizerGeometry();
-      visualizer.mesh.position.copy(formPositions[i]);
-      this.visualizerForms.push(visualizer);
-      this.scene.add(visualizer.mesh);
-    }
+    // Create geometry
+    this.visualizerGeometry = new VisualizerGeometry();
+    this.scene.add(this.visualizerGeometry.mesh);
     
     // Create particle system
     this.particleSystem = new ParticleSystem();
     this.scene.add(this.particleSystem.points);
+    
+    // Add space effects
+    this.spaceEffects = new SpaceEffects(this.scene);
     
     // Enhanced lighting setup
     const ambientLight = new THREE.AmbientLight(0x404040);
@@ -86,13 +80,8 @@ class AudioVisualizer {
       this.scene.add(light);
     }
     
-    // Enhanced camera movement
-    this.cameraPath = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0, 0, 30),
-      new THREE.Vector3(30, 0, 0),
-      new THREE.Vector3(0, 30, 0),
-      new THREE.Vector3(-30, 0, 0)
-    ]);
+    // Add fog for depth effect
+    this.scene.fog = new THREE.FogExp2(0x000000, 0.001);
   }
 
   bindEvents() {
@@ -119,51 +108,27 @@ class AudioVisualizer {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
-  updateCamera(frequencyData) {
-    const avgEnergy = frequencyData.reduce((a, b) => a + b, 0) / frequencyData.length / 255;
-    
-    // Move camera along path based on music energy
-    const pathPosition = (this.time * 0.1 + avgEnergy) % 1;
-    const targetPosition = this.cameraPath.getPointAt(pathPosition);
-    
-    // Smooth camera movement
-    this.camera.position.lerp(targetPosition, 0.05);
-    this.camera.lookAt(0, 0, 0);
-  }
-
   animate() {
     requestAnimationFrame(this.animate.bind(this));
-    this.time += 0.016;
     
     if (this.playing) {
       const frequencyData = this.audioAnalyzer.getFrequencyData();
       const avgEnergy = frequencyData.reduce((a, b) => a + b, 0) / frequencyData.length;
+      
+      // Update all visualizers
+      this.visualizerGeometry.update(frequencyData);
+      this.particleSystem.update(frequencyData);
+      this.spaceEffects.update(frequencyData);
+      this.updateLights(frequencyData);
+      
+      // Handle background transitions
+      this.updateBackgroundTransitions(avgEnergy);
       
       // Beat detection
       if (avgEnergy > this.beatThreshold && Date.now() - this.lastBeat > this.beatHoldTime) {
         this.onBeat();
         this.lastBeat = Date.now();
       }
-      
-      // Update all visualizers
-      this.visualizerForms.forEach(visualizer => {
-        visualizer.update(frequencyData);
-      });
-      
-      this.updateCamera(frequencyData);
-      
-      // Handle visualizer transitions
-      this.transitionTimer += 0.016;
-      if(this.transitionTimer > 5.0) { // Switch focus every 5 seconds
-        this.transitionTimer = 0;
-        this.activeVisualizer = (this.activeVisualizer + 1) % this.visualizerForms.length;
-        
-        // Trigger form transition for active visualizer
-        const nextForm = Math.floor(Math.random() * 4);
-        this.visualizerForms[this.activeVisualizer].transitionToForm(nextForm);
-      }
-      
-      this.updateLights(frequencyData);
     }
     
     this.controls.update();
@@ -173,10 +138,43 @@ class AudioVisualizer {
   onBeat() {
     // Trigger visual effects on beat
     this.camera.position.z += Math.random() * 0.5 - 0.25;
-    this.visualizerForms[this.activeVisualizer].material.uniforms.blobScale.value = 1.2;
+    this.visualizerGeometry.material.uniforms.blobScale.value = 1.2;
     setTimeout(() => {
-      this.visualizerForms[this.activeVisualizer].material.uniforms.blobScale.value = 1.0;
+      this.visualizerGeometry.material.uniforms.blobScale.value = 1.0;
     }, 200);
+  }
+
+  updateBackgroundTransitions(avgEnergy) {
+    const now = Date.now();
+    
+    // Trigger transition based on energy and time
+    if (avgEnergy > 200 && now - this.transitionTime > this.backgroundTransitionDuration) {
+      this.activeBackground = (this.activeBackground + 1) % 3;
+      this.transitionTime = now;
+      
+      // Adjust camera and effects based on active background
+      switch(this.activeBackground) {
+        case 0: // Starfield focus
+          this.camera.position.z = 30;
+          break;
+        case 1: // Nebula focus
+          this.camera.position.z = 50;
+          break;
+        case 2: // Wormhole focus
+          this.camera.position.z = 70;
+          break;
+      }
+    }
+    
+    // Smooth camera transitions
+    this.camera.position.lerp(
+      new THREE.Vector3(
+        this.camera.position.x,
+        this.camera.position.y,
+        this.camera.position.z
+      ),
+      0.02
+    );
   }
 
   updateLights(frequencyData) {
