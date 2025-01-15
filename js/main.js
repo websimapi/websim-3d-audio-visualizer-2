@@ -48,7 +48,9 @@ class AudioVisualizer {
     this.controls.autoRotateSpeed = 0.3;
     
     this.visualizerGeometry = new VisualizerGeometry();
-    this.scene.add(this.visualizerGeometry.mesh);
+    this.visualizerGeometry.getPlanets().forEach(planet => {
+      this.scene.add(planet);
+    });
     
     this.particleSystem = new ParticleSystem();
     this.scene.add(this.particleSystem.points);
